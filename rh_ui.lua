@@ -212,8 +212,12 @@ local function iconRows(count, width)
 	return math.max(1, math.ceil(count / cols))
 end
 
+local GONE_ICON = Color(1, 1, 1, 0.3, 0, 0, 0) -- 离开楼层时已经没有的道具：画成半透明
+local NORMAL_ICON = Color(1, 1, 1, 1, 0, 0, 0)
+
 -- 在 (x, y) 开始、宽 width 的区域里画一排排道具图标，最多 maxRows 行，放不下的显示 "+N"
-local function drawIcons(items, x, y, width, maxRows)
+-- gone：{ [序号] = true }，这些道具画成半透明（可以为 nil）
+local function drawIcons(items, x, y, width, maxRows, gone)
 	local count = #items
 	if count == 0 then
 		text(Small, T("noItems"), x + 2, y + (ICON - Small.h) / 2, FADED)
@@ -228,7 +232,11 @@ local function drawIcons(items, x, y, width, maxRows)
 	for i = 1, shown do
 		local col = (i - 1) % cols
 		local row = (i - 1) // cols
-		getIcon(items[i]):Render(Vector(OX + x + col * ICON + 8, OY + y + row * ICON + 8), Vector.Zero, Vector.Zero)
+		local sprite = getIcon(items[i])
+		local faded = gone ~= nil and gone[i]
+		if faded then sprite.Color = GONE_ICON end
+		sprite:Render(Vector(OX + x + col * ICON + 8, OY + y + row * ICON + 8), Vector.Zero, Vector.Zero)
+		if faded then sprite.Color = NORMAL_ICON end -- 图标是共用的，画完恢复
 	end
 	if shown < count then
 		local col = shown % cols
@@ -817,9 +825,15 @@ local function drawDetail(entries)
 		blocks[#blocks + 1] = { label = T("startItems"), items = run.startItems, color = BLUE }
 	end
 	for _, floor in ipairs(run.floors) do
+		local gone = nil
+		if type(floor.gone) == "table" then
+			gone = {}
+			for _, index in ipairs(floor.gone) do gone[index] = true end
+		end
 		blocks[#blocks + 1] = {
 			label = floorName(run, floor),
 			items = floor.items or {},
+			gone = gone,
 			bosses = floor.bosses or {},
 			deals = dealLines(floor),
 			time = (floor.time ~= nil) and shortTime(floor.time) or nil,
@@ -903,6 +917,9 @@ local function drawDetail(entries)
 	-- 道具选择模式：底部左边显示选中道具的名字和拾取说明
 	if sel ~= nil then
 		local name, desc = itemText(blocks[sel.b].items[sel.k])
+		if blocks[sel.b].gone ~= nil and blocks[sel.b].gone[sel.k] then
+			name = name .. T("itemGone")
+		end
 		local width = hintLeft - X0 - 10
 		text(Small, fit(Small, name, width), X0, HINT_Y, INK)
 		local nameW = textWidth(Small, name)
@@ -932,7 +949,7 @@ local function drawDetail(entries)
 				text(Small, item.text, ix, lineY, item.color)
 			end
 		end
-		drawIcons(block.items, itemX, y, itemW, block.rows)
+		drawIcons(block.items, itemX, y, itemW, block.rows, block.gone)
 		-- 选中的道具：画一个墨水方框
 		if sel ~= nil and sel.b == i then
 			local bx0 = itemX + ((sel.k - 1) % cols) * ICON - 1
@@ -951,7 +968,8 @@ local function drawDetail(entries)
 		end
 		if block.bosses ~= nil then
 			if #block.bosses == 0 then
-				text(Small, T("noItems"), bossX, textY, FADED)
+				-- 贪婪模式的前几层本来就不记录 Boss（只记录最后的究极贪婪），留空不画"-"
+				if not run.greed then text(Small, T("noItems"), bossX, textY, FADED) end
 			else
 				-- 每个 Boss 一行：小图标 + 名字
 				for j, boss in ipairs(block.bosses) do

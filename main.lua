@@ -55,6 +55,7 @@ function mod:LoadHistory()
 	if type(data.runs) ~= "table" then data.runs = {} end
 	if type(data.current) ~= "table" then data.current = nil end
 	for _, run in ipairs(data.runs) do removePhantomFloors(run) end
+	if mod.MergeSplitRuns then mod.MergeSplitRuns(data.runs) end
 	data.version = 1
 	mod.Data = data
 end
@@ -155,6 +156,7 @@ local function newFloorRecord()
 		t0 = game.TimeCounter, -- 进入本层时的对局计时
 		time = 0, -- 在本层花费的时间（帧，30 帧 = 1 秒）
 		items = {}, -- 本层获得的道具 ID（按获得顺序）
+		-- gone = { 序号, ... }：items 里离开本层时已经不在身上的道具（见 MarkGoneItems）
 		bosses = {}, -- 本层击败的 Boss：数字 = BossID，字符串 = "类型.变种"（模组 Boss）
 		lost = {}, -- 本层失去的道具（用于忽略"放下又捡回来"）
 	}
@@ -296,6 +298,37 @@ function mod:UpdateInventory()
 		run.snap[key] = now
 	end
 	run.active = active
+	mod.MarkGoneItems(run)
+end
+
+-- 标记本层获得、但此刻已经不在身上的道具（被 D4 / D100 重随掉、被换掉、被吞掉等）。
+-- 每次扫描都会重新计算；离开楼层前最后扫描一次，留下的就是"离开这一层时已经没有了"的道具。
+-- floor.gone = 本层 items 里这些道具的序号（从 1 开始）；没有则为 nil
+function mod.MarkGoneItems(run)
+	local floor = run and currentFloor(run)
+	if floor == nil then return end
+	if #floor.items == 0 then
+		floor.gone = nil
+		return
+	end
+	-- 身上现有的道具数量。也算上暂时不在场的形态（如堕化拉撒路翻面后的另一面），宁可少标也不要错标
+	local held = {}
+	for _, snapshot in pairs(run.snap or {}) do
+		for idStr, count in pairs(snapshot) do
+			held[idStr] = (held[idStr] or 0) + count
+		end
+	end
+	-- 同一种道具有多个时，优先认为最新获得的那个还在身上
+	local gone = {}
+	for i = #floor.items, 1, -1 do
+		local idStr = tostring(floor.items[i])
+		if (held[idStr] or 0) > 0 then
+			held[idStr] = held[idStr] - 1
+		else
+			table.insert(gone, 1, i)
+		end
+	end
+	floor.gone = (#gone > 0) and gone or nil
 end
 
 -- 根据快照生成"最终道具"列表：先按获得顺序排，剩下的按 ID 排
@@ -408,6 +441,138 @@ local function finalizeRun(result, stale)
 	mod.Data.current = nil
 	mod:SaveHistory()
 end
+
+-- 刚被记成"死亡 / 放弃"的同一局又被"继续"了（例如用回档类 mod 在死后回到之前的存档点）：
+-- 把那条记录接回来继续记，而不是另起一条从当前楼层开始、把身上所有道具都算成"初始道具"的记录。
+local function reopenRun(seed)
+	local run = mod.Data.runs[1]
+	if run == nil or run.seed ~= seed or run.result == "win" or run.difficulty ~= game.Difficulty
+		or type(run.floors) ~= "table" or #run.floors == 0 then
+		return nil
+	end
+	table.remove(mod.Data.runs, 1)
+	run.result, run.killer, run.lastHit, run.finalItems = nil, nil, nil, nil
+
+	-- 以现在身上的道具为基线
+	run.snap, run.active = {}, {}
+	local held = {}
+	for _, entry in ipairs(getTrackedPlayers()) do
+		local snapshot = scanPlayer(entry.player)
+		run.snap[entry.key] = snapshot
+		run.active[#run.active + 1] = entry.key
+		for idStr, count in pairs(snapshot) do held[idStr] = (held[idStr] or 0) + count end
+	end
+
+	local level = game:GetLevel()
+	local last = run.floors[#run.floors]
+	local before = 0
+	for i = 1, #run.floors - 1 do before = before + (tonumber(run.floors[i].time) or 0) end
+	if last.stage == level:GetStage() and last.stageType == level:GetStageType() then
+		-- 回到了最后那一层：回档点之后才拿到的道具现在不在身上，从这一层的记录里去掉
+		local function reserve(list)
+			for _, id in ipairs(list or {}) do
+				local idStr = tostring(id)
+				if (held[idStr] or 0) > 0 then held[idStr] = held[idStr] - 1 end
+			end
+		end
+		reserve(run.startItems)
+		for i = 1, #run.floors - 1 do reserve(run.floors[i].items) end
+		local kept = {}
+		for _, id in ipairs(last.items or {}) do
+			local idStr = tostring(id)
+			if (held[idStr] or 0) > 0 then
+				held[idStr] = held[idStr] - 1
+				kept[#kept + 1] = id
+			end
+		end
+		last.items = kept
+		last.gone = nil
+		last.lost = {}
+		last.enter = game:GetFrameCount()
+		last.t0 = before -- 本层计时接着算（各层用时加起来等于对局计时）
+	else
+		last.lost, last.enter, last.t0 = nil, nil, nil
+		run.floors[#run.floors + 1] = newFloorRecord()
+	end
+	run.time = game.TimeCounter
+	mod.Data.current = run
+	return run
+end
+
+-- 旧版本留下的"一局被拆成两条"的记录：前一条以死亡 / 放弃结束，后一条是同一个种子、从中途开始的记录。合并成一条
+local function sumFloorTimes(floors, first, last)
+	local total = 0
+	for i = first, last do total = total + (tonumber(floors[i].time) or 0) end
+	return total
+end
+
+local function mergeSplitRuns(runs)
+	local i = 1
+	while i < #runs do
+		local newer, older = runs[i], runs[i + 1]
+		if newer.partial and newer.seed == older.seed and older.result ~= "win"
+			and newer.difficulty == older.difficulty and newer.greed == older.greed
+			and type(newer.floors) == "table" and #newer.floors > 0
+			and type(older.floors) == "table" and #older.floors > 0 then
+			local floors = {}
+			for k = 1, #older.floors - 1 do floors[#floors + 1] = older.floors[k] end
+			local oldLast, newFirst = older.floors[#older.floors], newer.floors[1]
+			local startAt = 1
+			if oldLast.stage == newFirst.stage and oldLast.stageType == newFirst.stageType then
+				-- 同一层：回档前在这一层拿到、回档后仍在身上的道具保留，再接上回档后拿到的
+				local held = {}
+				for _, id in ipairs(newer.startItems or {}) do
+					local idStr = tostring(id)
+					held[idStr] = (held[idStr] or 0) + 1
+				end
+				local items = {}
+				for _, id in ipairs(oldLast.items or {}) do
+					local idStr = tostring(id)
+					if (held[idStr] or 0) > 0 then
+						held[idStr] = held[idStr] - 1
+						items[#items + 1] = id
+					end
+				end
+				for _, id in ipairs(newFirst.items or {}) do items[#items + 1] = id end
+				-- 回档点在这一层里的时间 = 继续时的对局计时 - 这一层开始时的对局计时
+				local resumedAt = (tonumber(newer.time) or 0) - sumFloorTimes(newer.floors, 1, #newer.floors)
+				local intoFloor = resumedAt - sumFloorTimes(older.floors, 1, #older.floors - 1)
+				intoFloor = math.max(0, math.min(tonumber(oldLast.time) or 0, intoFloor))
+				local deal = nil
+				for _, kind in ipairs({ "devil", "angel" }) do
+					local level = math.max(tonumber((oldLast.deal or {})[kind]) or 0, tonumber((newFirst.deal or {})[kind]) or 0)
+					if level > 0 then
+						deal = deal or {}
+						deal[kind] = level
+					end
+				end
+				local bosses = {}
+				for _, b in ipairs(oldLast.bosses or {}) do bosses[#bosses + 1] = b end
+				for _, b in ipairs(newFirst.bosses or {}) do bosses[#bosses + 1] = b end
+				floors[#floors + 1] = {
+					stage = newFirst.stage, stageType = newFirst.stageType, xl = newFirst.xl, ascent = newFirst.ascent,
+					time = intoFloor + (tonumber(newFirst.time) or 0),
+					items = items, bosses = bosses, deal = deal,
+					coins = newFirst.coins, bombs = newFirst.bombs, keys = newFirst.keys,
+				}
+				startAt = 2
+			else
+				floors[#floors + 1] = oldLast
+			end
+			for k = startAt, #newer.floors do floors[#floors + 1] = newer.floors[k] end
+
+			older.floors = floors
+			for _, key in ipairs({ "result", "killer", "finalItems", "stats", "actives", "trinkets", "smelted", "time" }) do
+				older[key] = newer[key]
+			end
+			runs[i] = older
+			table.remove(runs, i + 1)
+		else
+			i = i + 1
+		end
+	end
+end
+mod.MergeSplitRuns = mergeSplitRuns
 
 ----------------------------------------------------------------------
 -- 死因：记录角色最后一次受到的伤害来自哪里
@@ -555,9 +720,12 @@ function mod:OnGameStarted(isContinued)
 			run.snap = run.snap or {}
 			run.active = run.active or {}
 		else
-			-- 存档里没有这局的记录（比如中途才装上 mod）
 			if run ~= nil then finalizeRun("quit", true) end
-			startRun(true)
+			-- 这局刚被记成死亡 / 放弃又被继续了（回档）：接回原来的记录；
+			-- 否则就是存档里没有这局的记录（比如中途才装上 mod），从这里开始记
+			if reopenRun(seed) == nil then
+				startRun(true)
+			end
 		end
 	else
 		-- 新开一局；如果上一局没正常结束，按"放弃"归档

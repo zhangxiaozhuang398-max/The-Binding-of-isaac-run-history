@@ -145,3 +145,9 @@ Records the last 50 runs per save slot: character, seed, result, time, final ite
 - Press `F2` in the main menu or during a run, or pick the "Run History" note in the Stats screen. In the floor view, press `Space` to browse items and see their names.
 - If REPENTOGON is missing, the page shows a red "Needs REPENTOGON 1.0.12e" next to its title.
 - Settings are in `rh_config.lua`.
+
+## 许可证 / License
+
+本 mod 的代码以 [MIT 许可证](LICENSE) 发布。游戏里的道具 / 角色 / Boss 名称和引用的游戏贴图版权归原作者所有，不在 MIT 许可范围内。
+
+The mod's code is released under the [MIT License](LICENSE). Item, character and boss names and the game art it refers to belong to the game's copyright holders and are not covered by it.

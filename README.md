@@ -1,8 +1,8 @@
 # Run History / 对局记录
 
-《以撒的结合：忏悔》的 mod：自动记录最近 20 局对局，并用游戏自己的纸张菜单风格显示出来。
+《以撒的结合：忏悔》的 mod：自动记录最近 50 局对局，并用游戏自己的纸张菜单风格显示出来。
 
-A mod for *The Binding of Isaac: Repentance* that records your last 20 runs and shows them in a page styled like the game's own paper menus. (English summary at the bottom.)
+A mod for *The Binding of Isaac: Repentance* that records your last 50 runs and shows them in a page styled like the game's own paper menus. (English summary at the bottom.)
 
 ## 功能
 
@@ -23,7 +23,7 @@ A mod for *The Binding of Isaac: Repentance* that records your last 20 runs and 
 - 离开本层时的金币、炸弹、钥匙数量
 - 恶魔房 / 天使房是否出现、是否进入
 
-记录按存档槽分开保存，每个存档最多保留 20 局。
+记录按存档槽分开保存，每个存档最多保留 50 局。
 
 ## 必须安装：REPENTOGON 1.0.12e
 
@@ -81,7 +81,7 @@ The Binding of Isaac Rebirth/mods/run history/
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `ToggleKey` | `Keyboard.KEY_F2` | 打开 / 关闭页面的按键（主菜单和对局内都用它） |
-| `MaxRuns` | `20` | 最多保留多少局 |
+| `MaxRuns` | `50` | 最多保留多少局 |
 | `Language` | `"auto"` | `"auto"` 跟随游戏语言，或 `"zh"` / `"en"` |
 | `SkipQuickRestarts` | `true` | 没打完第一层就重开的对局不记录 |
 | `MenuOffsetX` / `MenuOffsetY` | `0` | 主菜单里页面位置的微调（像素） |
@@ -124,7 +124,7 @@ The Binding of Isaac Rebirth/data/run history/save1.dat
 
 ## English summary
 
-Records the last 20 runs per save slot: character, seed, result, time, final items and stats, the active items and trinkets you ended with, what killed you, and for every floor the items picked up, bosses defeated, time spent, coins / bombs / keys when leaving, and whether a devil or angel room appeared and was entered.
+Records the last 50 runs per save slot: character, seed, result, time, final items and stats, the active items and trinkets you ended with, what killed you, and for every floor the items picked up, bosses defeated, time spent, coins / bombs / keys when leaving, and whether a devil or angel room appeared and was entered.
 
 **Requirements**
 

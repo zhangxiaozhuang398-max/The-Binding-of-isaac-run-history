@@ -630,7 +630,7 @@ local function drawPaper()
 end
 
 local function drawList(entries)
-	local maxRuns = tonumber(mod.Config.MaxRuns) or 20
+	local maxRuns = tonumber(mod.Config.MaxRuns) or 50
 
 	text(Big, T("title"), X0, Y0, INK)
 	textRight(Small, string.format("%d / %d", #mod.Data.runs, maxRuns), X1, Y0 + 5, FADED)

@@ -6,7 +6,7 @@ return {
 	ToggleKey = Keyboard.KEY_F2,
 
 	-- 最多保留多少局记录
-	MaxRuns = 20,
+	MaxRuns = 50,
 
 	-- 界面语言："auto"（跟随游戏语言）、"zh"（中文）、"en"（English）
 	Language = "auto",

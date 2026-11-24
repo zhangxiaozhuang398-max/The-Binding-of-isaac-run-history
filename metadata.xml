@@ -4,7 +4,7 @@
     <directory>run history</directory>
     <id>3838982654</id>
     <description>[h1]Run History / 对局记录[/h1]
-Records your last 20 runs and shows them on a page styled like the game's own paper menus. (中文说明在下面)
+Records your last 50 runs and shows them on a page styled like the game's own paper menus. (中文说明在下面)
 
 [h1]Required: REPENTOGON 1.0.12e[/h1]
 [b]This mod needs REPENTOGON version 1.0.12e. Install it before using the mod.[/b]
@@ -66,7 +66,7 @@ To remove REPENTOGON later, delete [b]dsound.dll[/b] from the game folder.
 [/list]
 
 [h1]对局记录[/h1]
-自动记录最近 20 局对局，用游戏自己的纸张菜单风格显示。
+自动记录最近 50 局对局，用游戏自己的纸张菜单风格显示。
 
 [h1]必须安装：REPENTOGON 1.0.12e[/h1]
 [b]本 mod 需要 REPENTOGON 1.0.12e 版本，请先安装再使用。[/b]

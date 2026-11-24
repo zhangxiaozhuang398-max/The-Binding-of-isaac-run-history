@@ -432,7 +432,7 @@ local function finalizeRun(result, stale)
 
 	if not skip then
 		table.insert(mod.Data.runs, 1, run)
-		local maxRuns = math.max(1, tonumber(mod.Config.MaxRuns) or 20)
+		local maxRuns = math.max(1, tonumber(mod.Config.MaxRuns) or 50)
 		while #mod.Data.runs > maxRuns do
 			table.remove(mod.Data.runs)
 		end

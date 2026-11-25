@@ -16,6 +16,8 @@ mod.Names = include("rh_names")
 
 local MAX_ITEMS_PER_FLOOR = 120 -- 防止不停重随道具的角色（如堕化伊甸）把存档撑爆
 local TRINKET_GOLDEN = 32768 -- 金饰品的 ID 标记（TrinketType.TRINKET_GOLDEN_FLAG）
+local STAGE_VOID = 12 -- LevelStage.STAGE7（虚空）
+local BOSS_DELIRIUM = 70 -- 精神错乱的 BossID
 
 -- 存档内容：runs = 已结束的对局（新的在前），current = 正在进行的对局
 mod.Data = { version = 1, runs = {} }
@@ -454,6 +456,17 @@ local function finalizeRun(result, stale)
 	run.result = result
 	if result == "death" then
 		run.killer = run.lastHit
+	end
+	-- 在虚空层胜利 = 打败了精神错乱（游戏结束得比清房判定早，平时记不到它）
+	local lastFloor = run.floors[#run.floors]
+	if result == "win" and lastFloor ~= nil and lastFloor.stage == STAGE_VOID then
+		local bosses = lastFloor.bosses or {}
+		lastFloor.bosses = bosses
+		for i = #bosses, 1, -1 do
+			if bosses[i] == BOSS_DELIRIUM then table.remove(bosses, i) end
+		end
+		bosses[#bosses + 1] = BOSS_DELIRIUM
+		run.lastBoss = BOSS_DELIRIUM
 	end
 	run.lastHit = nil
 	run.finalItems = buildFinalItems(run)

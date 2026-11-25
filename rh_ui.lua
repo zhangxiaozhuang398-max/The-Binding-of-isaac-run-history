@@ -358,6 +358,11 @@ local function bossName(boss)
 end
 
 local function lastBossName(run)
+	-- 在虚空层胜利，最后打败的一定是精神错乱（旧记录里没记到它）
+	local lastFloor = run.floors[#run.floors]
+	if run.result == "win" and lastFloor ~= nil and lastFloor.stage == 12 then
+		return bossName(70)
+	end
 	for i = #run.floors, 1, -1 do
 		local bosses = run.floors[i].bosses
 		if bosses ~= nil and #bosses > 0 then

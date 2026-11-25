@@ -116,7 +116,37 @@ local function getTrackedPlayers()
 	return list
 end
 
--- 返回 { ["道具ID"] = 数量 }
+-- 吞下去的饰品（咕噜药丸、弹珠袋、熔炉等）：返回 { [饰品ID] = { 普通数量, 金饰品数量 } }
+local function getSmeltedTrinkets(player)
+	local result = {}
+	if player.GetSmeltedTrinkets ~= nil then
+		-- REPENTOGON：直接读游戏里的"已吞下饰品"表
+		local ok, list = pcall(function() return player:GetSmeltedTrinkets() end)
+		if ok and type(list) == "table" then
+			for id, entry in pairs(list) do
+				local normal = tonumber(entry.trinketAmount) or 0
+				local golden = tonumber(entry.goldenTrinketAmount) or 0
+				if normal > 0 or golden > 0 then result[id] = { normal, golden } end
+			end
+			return result
+		end
+	end
+	-- 没有 REPENTOGON：拥有、但不在手上的饰品就是吞下去的（分不出金饰品，也数不出数量）
+	pcall(function()
+		local held = {}
+		for i = 0, 1 do
+			local id = player:GetTrinket(i)
+			if id ~= nil and id > 0 then held[id & (TRINKET_GOLDEN - 1)] = true end
+		end
+		local maxId = Isaac.GetItemConfig():GetTrinkets().Size - 1
+		for id = 1, maxId do
+			if not held[id] and player:HasTrinket(id, false) then result[id] = { 1, 0 } end
+		end
+	end)
+	return result
+end
+
+-- 返回 { ["道具ID"] = 数量 }。吞下的饰品也算被动道具，记成负数 ID：-饰品ID（金饰品为 -(饰品ID + 32768)）
 local function scanPlayer(player)
 	local snapshot = {}
 	for _, id in ipairs(getValidItemIds()) do
@@ -125,15 +155,32 @@ local function scanPlayer(player)
 			snapshot[tostring(id)] = count
 		end
 	end
+	-- 骰子袋每个房间给的一次性骰子放在第二个口袋槽里，出房间就没了，属于卡牌类的消耗品，不算获得道具
+	local okPocket, pocketId = pcall(function() return player:GetActiveItem(ActiveSlot.SLOT_POCKET2) end)
+	if okPocket and pocketId ~= nil and pocketId > 0 then
+		local idStr = tostring(pocketId)
+		if snapshot[idStr] ~= nil then
+			snapshot[idStr] = snapshot[idStr] - 1
+			if snapshot[idStr] <= 0 then snapshot[idStr] = nil end
+		end
+	end
+	for id, amounts in pairs(getSmeltedTrinkets(player)) do
+		if amounts[1] > 0 then snapshot[tostring(-id)] = amounts[1] end
+		if amounts[2] > 0 then snapshot[tostring(-(id + TRINKET_GOLDEN))] = amounts[2] end
+	end
 	return snapshot
 end
 
+-- 道具在前（按 ID），吞下的饰品在后（按饰品 ID）
 local function sortedIds(snapshot)
 	local ids = {}
 	for idStr in pairs(snapshot) do
 		ids[#ids + 1] = tonumber(idStr)
 	end
-	table.sort(ids)
+	table.sort(ids, function(a, b)
+		if (a > 0) ~= (b > 0) then return a > 0 end
+		return math.abs(a) < math.abs(b)
+	end)
 	return ids
 end
 
@@ -182,29 +229,23 @@ local function captureStats(run)
 	end)
 	if ok then run.stats = stats end
 
-	-- 主动道具（主槽、学生书包副槽、口袋主动）和饰品（手持的；金饰品带 32768 标记），以及吞下去的饰品
-	local okLoadout, actives, trinkets, smelted = pcall(function()
-		local actives, trinkets, smelted, held = {}, {}, {}, {}
+	-- 主动道具（主槽、学生书包副槽、口袋主动）和手持的饰品（金饰品带 32768 标记）。
+	-- 吞下去的饰品算被动道具，在道具列表里（负数 ID，见 scanPlayer）；旧版本的记录里是单独的 run.smelted
+	local okLoadout, actives, trinkets = pcall(function()
+		local actives, trinkets = {}, {}
 		for _, slot in ipairs({ ActiveSlot.SLOT_PRIMARY, ActiveSlot.SLOT_SECONDARY, ActiveSlot.SLOT_POCKET }) do
 			local id = player:GetActiveItem(slot)
 			if id ~= nil and id > 0 then actives[#actives + 1] = id end
 		end
 		for i = 0, 1 do
 			local id = player:GetTrinket(i)
-			if id ~= nil and id > 0 then
-				trinkets[#trinkets + 1] = id
-				held[id & (TRINKET_GOLDEN - 1)] = true
-			end
+			if id ~= nil and id > 0 then trinkets[#trinkets + 1] = id end
 		end
-		local maxId = Isaac.GetItemConfig():GetTrinkets().Size - 1
-		for id = 1, maxId do
-			if not held[id] and player:HasTrinket(id, true) then smelted[#smelted + 1] = id end
-		end
-		return actives, trinkets, smelted
+		return actives, trinkets
 	end)
 	if okLoadout then
 		run.actives, run.trinkets = actives, trinkets
-		run.smelted = (#smelted > 0) and smelted or nil
+		run.smelted = nil
 	end
 end
 

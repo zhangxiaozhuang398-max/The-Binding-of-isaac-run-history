@@ -212,6 +212,36 @@ local function iconRows(count, width)
 	return math.max(1, math.ceil(count / cols))
 end
 
+-- 道具列表里的吞下的饰品是负数 ID：-饰品ID，金饰品为 -(饰品ID + 32768)。和手持饰品用不同的 Sprite（颜色互不影响）
+local swallowedCache = {}
+
+local function getListIcon(id)
+	if id >= 0 then return getIcon(id) end
+	local sprite = swallowedCache[id]
+	if sprite == nil then
+		local trinketId = -id
+		sprite = Sprite()
+		sprite:Load("gfx/runhistory_icon.anm2", false)
+		local ok, trinket = pcall(function() return Isaac.GetItemConfig():GetTrinket(trinketId % TRINKET_GOLDEN) end)
+		if ok and trinket ~= nil and trinket.GfxFileName ~= nil and trinket.GfxFileName ~= "" then
+			sprite:ReplaceSpritesheet(0, trinket.GfxFileName)
+		end
+		sprite:LoadGraphics()
+		sprite:Play("Idle", true)
+		sprite.Scale = Vector(0.5, 0.5)
+		swallowedCache[id] = sprite
+	end
+	return sprite
+end
+
+-- 图标颜色：金饰品染成金色；alpha < 1 时半透明
+local function listIconColor(id, alpha)
+	if id < 0 and -id >= TRINKET_GOLDEN then
+		return Color(1, 0.9, 0.45, alpha, 0.25, 0.18, 0)
+	end
+	return Color(1, 1, 1, alpha, 0, 0, 0)
+end
+
 local GONE_ICON = Color(1, 1, 1, 0.3, 0, 0, 0) -- 离开楼层时已经没有的道具：画成半透明
 local NORMAL_ICON = Color(1, 1, 1, 1, 0, 0, 0)
 
@@ -232,11 +262,16 @@ local function drawIcons(items, x, y, width, maxRows, gone)
 	for i = 1, shown do
 		local col = (i - 1) % cols
 		local row = (i - 1) // cols
-		local sprite = getIcon(items[i])
+		local id = items[i]
+		local sprite = getListIcon(id)
 		local faded = gone ~= nil and gone[i]
-		if faded then sprite.Color = GONE_ICON end
+		if id < 0 then
+			sprite.Color = listIconColor(id, faded and 0.3 or 1)
+		elseif faded then
+			sprite.Color = GONE_ICON
+		end
 		sprite:Render(Vector(OX + x + col * ICON + 8, OY + y + row * ICON + 8), Vector.Zero, Vector.Zero)
-		if faded then sprite.Color = NORMAL_ICON end -- 图标是共用的，画完恢复
+		if faded and id >= 0 then sprite.Color = NORMAL_ICON end -- 图标是共用的，画完恢复
 	end
 	if shown < count then
 		local col = shown % cols
@@ -496,7 +531,30 @@ local function killerInfo(killer)
 end
 
 -- 道具名称和拾取说明（官方中英文；其他 mod 的道具用道具配置里的名字）
+-- 饰品名称和说明：游戏配置里是 "#DICE_BAG_NAME" 这样的文本键，用 REPENTOGON 按界面语言查官方译名
+local function trinketText(trinketId)
+	local base = trinketId % TRINKET_GOLDEN
+	local ok, config = pcall(function() return Isaac.GetItemConfig():GetTrinket(base) end)
+	if not ok or config == nil then return "#" .. tostring(base), "" end
+	local function localize(key)
+		if type(key) ~= "string" or key == "" then return "" end
+		if key:sub(1, 1) ~= "#" then return key end
+		if Isaac.GetLocalizedString ~= nil then
+			local okStr, str = pcall(Isaac.GetLocalizedString, "Items", key, lang)
+			if okStr and type(str) == "string" and str ~= "" and str:sub(1, 1) ~= "#" then return str end
+		end
+		return ""
+	end
+	local name = localize(config.Name)
+	if name == "" then name = "#" .. tostring(base) end
+	return name, localize(config.Description)
+end
+
 local function itemText(id)
+	if id < 0 then
+		local name, desc = trinketText(-id)
+		return name .. T((-id >= TRINKET_GOLDEN) and "swallowedGolden" or "swallowed"), desc
+	end
 	local pair = Names.Items and Names.Items[id]
 	if pair ~= nil then
 		if lang == "zh" then return pair[2], pair[4] or "" end
